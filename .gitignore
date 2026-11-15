@@ -1,0 +1,10 @@
+# Modeller og runtimes hentes med scripts/ – aldrig i git
+/models/tts/*
+/models/stt/*
+!/models/**/.gitkeep
+/runtime/
+/dist/
+.DS_Store
+
+/build/
+/installer/setup/payload/*.zip

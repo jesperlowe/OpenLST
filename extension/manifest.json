@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "OpenLST",
+  "version": "0.1.0",
+  "description": "Læs op og diktér på hjemmesider. Alt behandles lokalt af OpenLST på din computer.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAufxrfPsvMbQJD5JcQT2KaKNjOy6fNDg2iXJow5MJsv/Jra0W+Achn1awUOu1n4Kv7foZy8LLHmGo0IcRvdHP9ThvieIhZurSz4avw4DXom06TYqp0niqm5sZOnwk/ICS2B8RdELD7etYdsLMMRZFRxtDLKHHRdSVvPX4CD8pr2JpzC8dwOHycWxLteh2WQ1Qs8MHCf9QM427STpHt6rBwVRO46BxZFxN56qQpIQnYUt55VV6sITEf0min8r91wcXMyZtIll2QELGCF8/dSdytfML4Z5F5qwNvvF/mztwQq/tzNz7Lqvev078edAVnKZNM2FdK2AYH1vtPRFTA9E1LwIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "OpenLST – vis/skjul værktøjslinjen",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "read-selection": {
+      "suggested_key": {
+        "default": "Alt+Shift+L"
+      },
+      "description": "Læs markeret tekst op"
+    },
+    "toggle-toolbar": {
+      "suggested_key": {
+        "default": "Alt+Shift+O"
+      },
+      "description": "Vis/skjul OpenLST-værktøjslinjen"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "lib/sentences.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
+      "exclude_matches": [
+        "http://localhost:8765/*",
+        "http://127.0.0.1:8765/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

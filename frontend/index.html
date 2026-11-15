@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenLST</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="sentences.js" defer></script>
+  <script src="wav.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <h1>OpenLST</h1>
+
+    <div class="text-area">
+      <textarea id="text" lang="da" spellcheck="true"
+        placeholder="Skriv eller indsæt din tekst her"
+        aria-label="Din tekst"></textarea>
+      <div id="reader" class="reader" hidden lang="da" aria-live="off"></div>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <div class="controls">
+      <button id="read" class="btn btn-primary" type="button">
+        <span class="icon" aria-hidden="true">🔊</span> Læs
+      </button>
+      <button id="dictate" class="btn btn-mic" type="button" aria-pressed="false">
+        <span class="icon" aria-hidden="true">🎤</span> <span class="label">Dikter</span>
+      </button>
+      <button id="pause" class="btn" type="button" disabled>
+        <span class="icon" aria-hidden="true">⏸</span> <span class="label">Pause</span>
+      </button>
+      <button id="stop" class="btn" type="button" disabled>
+        <span class="icon" aria-hidden="true">⏹</span> Stop
+      </button>
+      <button id="repeat" class="btn" type="button" disabled>
+        <span class="icon" aria-hidden="true">🔁</span> Gentag
+      </button>
+    </div>
+
+    <div class="speed">
+      <label for="speed">Oplæsningshastighed</label>
+      <div class="speed-row">
+        <span aria-hidden="true">Langsom</span>
+        <input id="speed" type="range" min="0.6" max="1.4" step="0.1" value="0.9"
+          aria-valuetext="Normal">
+        <span aria-hidden="true">Hurtig</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

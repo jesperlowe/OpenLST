@@ -1,0 +1,5 @@
+b9271efd25f7b8494bbd28d48dd675c8c119daa284f3ee488008935f515f1241  models/tts/da_DK-talesyntese-medium.onnx
+89fe13bd251406cc0088570d103ea7ac35823211d8466faf913268ab8506f41b  models/tts/da_DK-talesyntese-medium.onnx.json
+818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7  models/stt/ggml-tiny-q5_1.bin
+c2085835d3f50733e2ff6e4b41ae8a2b8d8110461e18821b09a15c40c42d1cca  models/stt/ggml-tiny-q8_0.bin
+422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898  models/stt/ggml-base-q5_1.bin

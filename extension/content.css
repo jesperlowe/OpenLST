@@ -1,0 +1,6 @@
+/* Fremhævning af den sætning, der læses op (CSS Custom Highlight API).
+   Ændrer ikke sidens indhold. */
+::highlight(openlst-sentence) {
+  background-color: #ffe58a;
+  color: #000;
+}
