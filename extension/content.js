@@ -8,7 +8,8 @@
   if (window.top !== window || window.__openlst) return;
   window.__openlst = true;
 
-  const { splitSentences, isSpeakable } = self.OpenLSTText;
+  const { splitSentences, isSpeakable, speechParts } = self.OpenLSTText;
+  const PREFETCH = 2; // bidder der hentes foran
   const HIGHLIGHT = 'openlst-sentence';
   const SPEED_MIN = 0.6, SPEED_MAX = 1.4, SPEED_DEFAULT = 0.9;
   const BLOCK = 'p,div,li,td,th,h1,h2,h3,h4,h5,h6,section,article,blockquote,pre,dd,dt,' +
@@ -104,7 +105,8 @@
           r.setEnd(b.node, b.offset);
         } catch { r = null; }
       }
-      items.push({ text: s.speak, range: r });
+      // Første bid holdes kort, så eleven hører lyd med det samme.
+      for (const text of speechParts(s.speak, items.length === 0)) items.push({ text, range: r });
     }
     return items;
   }
@@ -165,8 +167,10 @@
     highlight(item.range);
     setStatus('Læser op …');
     updateButtons();
-    const next = reading.items[i + 1];
-    if (next) send({ type: 'prefetch', text: next.text, speed });
+    for (let k = 1; k <= PREFETCH; k++) {
+      const next = reading.items[i + k];
+      if (next) send({ type: 'prefetch', text: next.text });
+    }
     const res = await send({ type: 'speak', text: item.text, speed });
     if (gen !== reading.gen) return;
     if (res && res.error) {
@@ -387,6 +391,7 @@
   function setSpeed(v) {
     speed = Math.round(Math.min(SPEED_MAX, Math.max(SPEED_MIN, v)) * 10) / 10;
     chrome.storage.local.set({ speed });
+    if (reading.active) send({ type: 'rate', speed }); // virker med det samme
     updateButtons();
   }
 

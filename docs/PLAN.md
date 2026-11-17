@@ -14,8 +14,9 @@ Referencehardware: Surface Go 1 (Pentium 4415Y, 4 GB RAM, ingen GPU/NPU).
 | STT-model | `ggml-tiny-q5_1.bin`, `-l da`, `-t` = fysiske kerner (2) | Mindst mulig latency på 2-kerne CPU |
 | Lydoptagelse | AudioWorklet → 16 kHz mono PCM → WAV kodet i JS | Ingen ffmpeg nødvendig; whisper.cpp kræver 16 kHz WAV |
 | Frontend | HTML + CSS + vanilla JS, serveret via Go `embed` | Krav sektion 10 |
+| Ventetid | Kort første bid (≤ ~50 tegn, delt ved komma), 2 bidder hentes foran, første bid forberedes mens eleven skriver, cache pr. tekst, Piper varmes op ved start og kører med høj prioritet | Eleven må ikke vente (krav 2026-11-16) |
 | Highlight V1 | Tekst splittes i sætninger i frontend; én TTS-request pr. sætning; afspilningskø styrer highlight | Highlight følger lyd præcist uden timing-gæt; kort tid til første lyd |
-| Hastighed | `length_scale = 1 / speed` (0.6–1.4, default 0.9) | Piper-native, ingen pitch-forvrængning |
+| Hastighed | Afspillerens `playbackRate` med bevaret tonehøjde (0.6–1.4, default 0.9); Piper kører altid ved 1.0 (revideret 2026-11-16) | Øjeblikkelig – ingen genstart af Piper, ingen ny lyd ved skift |
 | Installer | **Signeret MSIX** (Microsoft Store + winget) som primær kanal; **signeret** Inno Setup `OpenLST-Setup.exe` (per-user) som alternativ | Begge uden admin; MSIX er Windows' mest betroede installationsform (se §2a) |
 | Autostart | MSIX `windows.startupTask` / Startup-mappe (ikke Windows-service) | En Windows-service kræver admin at installere; per-user proces er nok |
 | Extension | Manifest V3, Edge + Chrome | Sektion 13–15 |
@@ -215,6 +216,31 @@ Hjemmeside ── content.js (værktøjslinje, markering, fremhævning, indsæt 
 - [ ] Indstillinger: farve på fremhævning, skrift, stemmevalg
 - [ ] Udgivelse i Edge Add-ons og Chrome Web Store (WorkingOnIT); skole-IT kan tvangsinstallere via Intune/GPO
 
+### M9 – Bedre dansk diktering: danske modeller og hardwareacceleration (NPU)
+
+Forudsætning: M0–M8 virker godt på Surface Go **uden** NPU. Det er og bliver minimumskravet; alt i M9 er tilvalg, der aktiveres automatisk, når hardwaren findes.
+
+**Del A – dansk-trænede Whisper-modeller (først, hjælper alle maskiner)**
+- Problem: Whisper Tiny/Base er svage på dansk (benchmark på syntetisk tale: Tiny Q5 79 % WER, Base Q5 43 %).
+- Undersøg dansk fine-tunede Whisper-modeller (fx fra Alexandra Instituttets CoRal-projekt): kvalitet, størrelse, licens, og om de kan konverteres til ggml/kvantiseres til whisper.cpp.
+- Sammenlign med benchmark på rigtige danske børneoptagelser (med samtykke) – ikke kun syntetisk tale.
+- [ ] Liste over kandidater med licens
+- [ ] Konvertering + kvantisering (Q5/Q8)
+- [ ] Benchmark på Surface Go: WER og ventetid
+
+**Del B – NPU som "hurtig profil" (senere)**
+- Gevinst primært for **diktering**: en større/bedre model (Small/Medium/dansk) kan køre uden at belaste CPU'en, og med lavere strømforbrug. Oplæsning (Piper) får lille gevinst – den er allerede hurtig, og VITS' dynamiske input passer dårligt til NPU'er.
+- Ny motor bag det eksisterende `STTEngine`-interface; whisper.cpp på CPU forbliver standard og fallback.
+- Ved opstart: registrér hardware → vælg hurtigste motor, der virker → fald tilbage til CPU ved fejl. Benchmarken sammenligner motorerne.
+- Kandidater (skal verificeres i prototype):
+  - Intel Core Ultra (AI Boost): OpenVINO (whisper.cpp's OpenVINO-encoder eller OpenVINO GenAI's Whisper-pipeline)
+  - Qualcomm Snapdragon X: ONNX Runtime + QNN
+  - AMD Ryzen AI: ONNX Runtime + Vitis AI
+  - Windows ML (Windows 11): kan vælge backend pr. maskine – undersøg om det erstatter tre separate integrationer
+- Første prototype: én leverandør (sandsynligvis Intel Core Ultra). Kræver en testmaskine.
+- Runtime-pakker pr. leverandør installeres kun, hvor de bruges (installerens størrelse).
+- Alt kører stadig 100 % lokalt; ingen ændring i privatliv eller sikkerhed.
+
 ## 7. Benchmark (sektion 19)
 
 - `openlst.exe bench --stt-models tiny-q5_1,tiny-q8_0,base-q5_1 --audio testdata/*.wav --runs 5`
@@ -241,7 +267,7 @@ Resultat dokumenteres i `THIRD_PARTY_LICENSES.md`.
 | Risiko | Afbødning |
 |---|---|
 | STT-latency på 4415Y for høj | Mål tidligt (M2 på rigtig hardware). Fallback: kortere optagelser, VAD-trim af stilhed, `-t 2`, greedy decoding, evt. `-ac` reduceret audio context |
-| Tiny-modellens danske nøjagtighed er svag | Benchmark tiny vs base; `--prompt` med danske stavemåder; overvej dansk fine-tuned whisper-model (licens!) |
+| Tiny-modellens danske nøjagtighed er svag | Benchmark tiny vs base; dansk fine-tunede Whisper-modeller og evt. NPU på nyere maskiner (M9) |
 | RAM-pres med Edge + 4 GB | Lazy-start whisper, idle-unload, Piper medium (~60 MB) |
 | Antivirus/SmartScreen blokerer ukendt exe | Store-distribution (MSIX); ellers Trusted Signing/SignPath + Defender-indsendelse (§2a) |
 | AppLocker/WDAC på skole-PC'er blokerer `%LOCALAPPDATA%` | Publisher-regel via signering; per-machine pakke til Intune (§2a.3) |

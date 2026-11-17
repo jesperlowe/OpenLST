@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"openlst/backend/procutil"
@@ -37,7 +38,7 @@ type Piper struct {
 	ls      float64
 	outDir  string
 	timeout time.Duration
-	broken  bool // seneste opstart fejlede
+	broken  atomic.Bool // Piper kunne ikke starte
 }
 
 type piperProc struct {
@@ -70,32 +71,25 @@ func NewPiper(bin, model string) (*Piper, error) {
 }
 
 // Ready er falsk, hvis Piper ikke kunne starte (fx manglende DLL'er).
+// Låser ikke, så /api/status svarer med det samme – også under opvarmning.
 func (p *Piper) Ready() bool {
-	if p == nil {
-		return false
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return !p.broken
+	return p != nil && !p.broken.Load()
 }
 
-// Warm starter processen i baggrunden med standardhastighed, så første
-// oplæsning ikke skal vente på at modellen indlæses.
+// Warm starter Piper og laver en rigtig syntese, så både model-indlæsning og
+// ONNX Runtimes første (langsomme) kørsel er overstået, før eleven trykker
+// Læs. Klienterne beder om hastighed 1,0 og styrer selv tempoet i afspilleren,
+// så processen aldrig skal genstartes for en ny hastighed.
 func (p *Piper) Warm() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if err := p.ensure(lengthScale(DefaultSpeed)); err != nil {
-		log.Printf("tts: opstart fejlede: %v", err)
-		p.broken = true
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, err := p.Synthesize(ctx, Request{Text: "Hej.", Speed: 1}); err != nil {
+		log.Printf("tts: opvarmning fejlede: %v", err)
+		p.broken.Store(true)
 		return
 	}
-	// Opdag hvis processen dør med det samme (fx STATUS_DLL_NOT_FOUND).
-	select {
-	case <-p.proc.done:
-		log.Printf("tts: piper stoppede ved opstart (exit %v)", p.proc.cmd.ProcessState)
-		p.broken = true
-	case <-time.After(1500 * time.Millisecond):
-	}
+	log.Printf("tts: klar efter %d ms (model indlæst og varmet op)", time.Since(start).Milliseconds())
 }
 
 func (p *Piper) Synthesize(ctx context.Context, req Request) (Result, error) {
@@ -107,6 +101,11 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (Result, error) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// Er forespørgslen opgivet, mens den ventede i kø (fx eleven trykkede
+	// Stop), springes den over, så den ikke forsinker den næste.
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
 
 	// Ét genforsøg, hvis processen er død undervejs.
 	for attempt := 0; ; attempt++ {
@@ -115,7 +114,7 @@ func (p *Piper) Synthesize(ctx context.Context, req Request) (Result, error) {
 		}
 		wav, err := p.roundTrip(ctx, text)
 		if err == nil {
-			p.broken = false
+			p.broken.Store(false)
 			return Result{WAV: wav}, nil
 		}
 		p.stopLocked()
@@ -171,6 +170,7 @@ func (p *Piper) ensure(ls float64) error {
 	)
 	cmd.Dir = dir
 	procutil.Hide(cmd)
+	procutil.Prioritize(cmd) // eleven venter – må ikke sinkes af andre programmer
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err

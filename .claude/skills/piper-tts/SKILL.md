@@ -28,7 +28,8 @@ piper -m model.onnx --json-input --output_raw
 Andre flag: `--sentence_silence <sek>`, `--noise_scale`, `--noise_w`, `--espeak_data <dir>` (kræves hvis espeak-ng-data ikke ligger ved siden af exe).
 
 ## Regler
-- `length_scale = 1 / speed`; speed klemmes til [0.6, 1.4], default 0.9.
+- **Klienter sender altid speed 1** og styrer tempo med `playbackRate` + `preservesPitch` (beslutning #040). `length_scale = 1/speed` findes kun for API-brugere; et skift genstarter Piper.
+- **Eleven må ikke vente:** første bid ≤ ~50 tegn (`speechParts` i `frontend/sentences.js`), 2 bidder foran, prewarm under skrivning, `Warm()` laver en rigtig syntese ved opstart, Piper kører med `ABOVE_NORMAL_PRIORITY_CLASS`, annullerede forespørgsler springes over i køen.
 - Én persistent Piper-proces pr. stemme; serialisér requests (mutex/kø); genstart ved crash; kill ved shutdown.
 - Med `--output_raw` er der ingen længde-header: læs til næste request er færdig er upålideligt → foretræk én kortlivet `-f`-kørsel pr. sætning hvis framing bliver et problem, og mål forskellen (model-load ~0.5–2 s på Surface Go).
 - Frontend splitter i sætninger (`Intl.Segmenter('da',{granularity:'sentence'})` + fallback); backend modtager én sætning ad gangen → giver præcis highlight.

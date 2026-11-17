@@ -29,3 +29,6 @@ func watchPeak(cmd *exec.Cmd) func() uint64 {
 		return uint64(ru.Maxrss) * 1024 // KiB på Linux
 	}
 }
+
+// Prioritize gør intet uden for Windows.
+func Prioritize(cmd *exec.Cmd) {}

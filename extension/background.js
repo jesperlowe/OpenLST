@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.tabs.create({ url: chrome.runtime.getURL('setup.html') });
     return false;
   }
-  if (['speak', 'prefetch', 'pause', 'resume', 'stop', 'recStart', 'recStop', 'recCancel', 'status'].includes(msg.type)) {
+  if (['speak', 'prefetch', 'rate', 'pause', 'resume', 'stop', 'recStart', 'recStop', 'recCancel', 'status'].includes(msg.type)) {
     toOffscreen(msg).then(sendResponse, (e) => sendResponse({ error: String(e && e.message || e) }));
     return true; // asynkront svar
   }

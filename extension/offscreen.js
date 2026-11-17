@@ -9,24 +9,31 @@ const { concat, resample, encodeWAV } = self.OpenLSTAudio;
 
 // ---------- Oplæsning ----------
 
+// Lyd hentes altid ved hastighed 1,0; tempoet styres af afspilleren
+// (playbackRate med bevaret tonehøjde), så det ændres med det samme.
 const player = new Audio();
-const cache = new Map(); // "speed|tekst" -> Promise<objectURL>
-let current = null;      // { resolve } for den sætning der afspilles
-
-function key(text, speed) { return speed + '|' + text; }
+player.preservesPitch = true;
+const cache = new Map(); // tekst -> Promise<objectURL>
+let current = null;      // { resolve } for den bid der afspilles
 
 async function apiError(res) {
   try { const j = await res.json(); if (j.error) return j.error; } catch { /* ikke JSON */ }
   return 'OpenLST svarede med fejl ' + res.status;
 }
 
-function fetchTTS(text, speed) {
-  const k = key(text, speed);
+function setRate(speed) {
+  const r = Math.min(1.4, Math.max(0.6, Number(speed) || 0.9));
+  player.defaultPlaybackRate = r;
+  player.playbackRate = r;
+}
+
+function fetchTTS(text) {
+  const k = text;
   if (cache.has(k)) return cache.get(k);
   const p = fetch(API + '/api/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, speed, language: 'da' }),
+    body: JSON.stringify({ text, speed: 1, language: 'da' }),
   }).then(async (res) => {
     if (!res.ok) throw new Error(await apiError(res));
     return URL.createObjectURL(await res.blob());
@@ -34,7 +41,7 @@ function fetchTTS(text, speed) {
   p.catch(() => cache.delete(k));
   cache.set(k, p);
   // Hold cachen lille.
-  while (cache.size > 4) {
+  while (cache.size > 8) {
     const [oldKey, oldP] = cache.entries().next().value;
     cache.delete(oldKey);
     oldP.then((u) => URL.revokeObjectURL(u)).catch(() => {});
@@ -53,13 +60,14 @@ async function speak(text, speed) {
   stopPlayback();
   let url;
   try {
-    url = await fetchTTS(text, speed);
+    url = await fetchTTS(text);
   } catch (e) {
     return { error: offlineMessage(e) };
   }
   return new Promise((resolve) => {
     current = { resolve };
     player.src = url;
+    setRate(speed);
     player.play().catch(() => finish({ error: 'Lyden kunne ikke afspilles.' }));
   });
 }
@@ -139,7 +147,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.target !== 'offscreen') return false;
   const handlers = {
     speak: () => speak(msg.text, msg.speed),
-    prefetch: () => { fetchTTS(msg.text, msg.speed).catch(() => {}); return { ok: true }; },
+    prefetch: () => { fetchTTS(msg.text).catch(() => {}); return { ok: true }; },
+    rate: () => { setRate(msg.speed); return { ok: true }; },
     pause: () => { player.pause(); return { ok: true }; },
     resume: () => { player.play().catch(() => {}); return { ok: true }; },
     stop: () => { stopPlayback(); return { ok: true }; },

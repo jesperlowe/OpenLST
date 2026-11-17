@@ -21,7 +21,7 @@ Adgang: kun fra OpenLST's egen side eller godkendte browser-extensions (se [SECU
 ```
 
 - `text`: 1–2000 tegn. Brugerfladen sender én sætning ad gangen.
-- `speed`: 0.6–1.4 (standard 0.9). Omsættes til Piper `length_scale = 1/speed`.
+- `speed`: 0.6–1.4 (standard 0.9). Omsættes til Piper `length_scale = 1/speed`. **OpenLST's egne klienter sender altid `1`** og styrer tempoet i afspilleren (`playbackRate`), så Piper aldrig skal genstarte, og hastighedsskift er øjeblikkelige.
 - `language`: `da` eller udeladt.
 
 Svar: `audio/wav` (22050 Hz mono for standardstemmen).

@@ -35,6 +35,9 @@ var sentences = []string{
 	"Danmark har omkring seks millioner indbyggere.",
 	"Min hund hedder Bobby, og den kan lide at lege i haven.",
 	"Hvornår begynder fodboldtræningen på torsdag?",
+	// Lang sætning og dens korte første bid (som brugerfladen sender først):
+	"Da Peter kom hjem fra skole i går, var hans mor allerede gået på arbejde, så han lavede selv mad til sig og sin lillesøster.",
+	"Da Peter kom hjem fra skole i går,",
 }
 
 type clip struct {
@@ -74,10 +77,13 @@ func Run(ctx context.Context, cfg *config.Config, dataDir string, out io.Writer)
 		return "", fmt.Errorf("tts: %w", err)
 	}
 	defer piper.Close()
+	warmStart := time.Now()
 	piper.Warm()
-	if _, err := piper.Synthesize(ctx, tts.Request{Text: "Hej.", Speed: 1}); err != nil {
-		return "", fmt.Errorf("tts: %w", err)
+	if !piper.Ready() {
+		return "", fmt.Errorf("tts: piper kunne ikke starte")
 	}
+	p("Opvarmning ved opstart af OpenLST (start + model + første syntese): **%d ms**\n\n", time.Since(warmStart).Milliseconds())
+	p("Tabellen herunder er *tid til første lyd*, når eleven trykker Læs (Piper er varm).\n\n")
 
 	p("| Sætning | Tegn | Genereringstid | Lydlængde | RTF |\n|---|---:|---:|---:|---:|\n")
 	var clips []clip

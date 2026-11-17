@@ -82,3 +82,12 @@ func watchPeak(cmd *exec.Cmd) func() uint64 {
 		return uint64(info.PeakProcessMemoryUsed)
 	}
 }
+
+// Prioritize giver processen højere prioritet end almindelige programmer.
+// Bruges til Piper, som kun arbejder, mens en elev venter på lyd.
+func Prioritize(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.ABOVE_NORMAL_PRIORITY_CLASS
+}

@@ -65,5 +65,40 @@ function splitSentences(text) {
 // Kun sætninger med bogstaver eller tal læses op.
 const isSpeakable = (s) => /[\p{L}\p{N}]/u.test(s.speak);
 
-return { splitSentences, isSpeakable };
+// ---------- Bidder til oplæsning ----------
+// Piper genererer en hel bid, før den kan afspilles. Den første bid i en
+// oplæsning holdes derfor kort, så eleven hører lyd med det samme; resten
+// genereres i baggrunden, mens der afspilles.
+const FIRST_PART = 50;  // tegn i første bid
+const PART = 180;       // tegn i de følgende bidder
+
+function splitPart(s, max) {
+  if (s.length <= max * 1.4) return [s, '']; // del ikke for lidt – det koster sprogmelodi
+  const win = s.slice(0, max);
+  let cut = Math.max(win.lastIndexOf(', '), win.lastIndexOf('; '), win.lastIndexOf(': '));
+  if (cut >= max * 0.35) {
+    cut += 1; // behold tegnet
+  } else {
+    cut = win.lastIndexOf(' ');
+    if (cut < max * 0.35) cut = max;
+  }
+  return [s.slice(0, cut).trim(), s.slice(cut).trim()];
+}
+
+// speechParts deler en sætning i bidder. first=true for den første sætning,
+// der læses, så første bid bliver kort.
+function speechParts(text, first) {
+  const parts = [];
+  let rest = text.trim();
+  let max = first ? FIRST_PART : PART;
+  while (rest) {
+    const [head, tail] = splitPart(rest, max);
+    if (head) parts.push(head);
+    rest = tail;
+    max = PART;
+  }
+  return parts;
+}
+
+return { splitSentences, isSpeakable, speechParts };
 })();

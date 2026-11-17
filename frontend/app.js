@@ -18,7 +18,7 @@
   const MAX_RECORD_MS = 60_000;   // diktering stopper automatisk efter 60 s
   const STT_RATE = 16000;
 
-  const { splitSentences, isSpeakable } = self.OpenLSTText;
+  const { splitSentences, isSpeakable, speechParts } = self.OpenLSTText;
   const { concat, resample, encodeWAV } = self.OpenLSTAudio;
   const engines = { tts: false, stt: false };
 
@@ -45,65 +45,92 @@
   }
 
   // ---------- Oplæsning ----------
+  // Teksten læses som en kø af bidder (speechParts): den første er kort, så
+  // eleven hører lyd med det samme. Lyd hentes op til PREFETCH bidder foran og
+  // caches pr. tekst, så Gentag og spring er øjeblikkelige. Hastigheden styres
+  // af afspilleren (playbackRate med bevaret tonehøjde): den ændres med det
+  // samme og kræver aldrig ny lyd fra Piper.
+
+  const PREFETCH = 2;
+  const CACHE_MAX = 16;
 
   const player = new Audio();
+  player.preservesPitch = true;
   const reading = {
     active: false,
     paused: false,
     sentences: [],
     spans: [],
-    index: -1,
+    items: [],   // { sentence, text }
+    pos: -1,     // aktuel bid
+    index: -1,   // aktuel sætning
     gen: 0,
-    cache: new Map(),       // nøgle -> Promise<objectURL>
-    urls: new Set(),
-    controllers: new Set(),
   };
+  const audioCache = new Map(); // tekst -> { promise, ctrl, done }
 
   function speed() {
     return Math.min(1.4, Math.max(0.6, parseFloat(speedEl.value) || 0.9));
   }
 
-  function cacheKey(i) {
-    return i + '@' + speed();
+  function applySpeed() {
+    player.defaultPlaybackRate = speed();
+    player.playbackRate = speed();
   }
 
-  function fetchAudio(i) {
-    const key = cacheKey(i);
-    if (reading.cache.has(key)) return reading.cache.get(key);
+  function fetchAudio(text) {
+    const hit = audioCache.get(text);
+    if (hit) { // senest brugt bagerst
+      audioCache.delete(text);
+      audioCache.set(text, hit);
+      return hit.promise;
+    }
     const ctrl = new AbortController();
-    reading.controllers.add(ctrl);
-    const p = fetch('/api/tts', {
+    const entry = { ctrl, done: false };
+    entry.promise = fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: reading.sentences[i].speak, speed: speed(), language: 'da' }),
+      body: JSON.stringify({ text, speed: 1, language: 'da' }),
       signal: ctrl.signal,
     }).then(async (res) => {
       if (!res.ok) throw new Error(await apiError(res));
-      const url = URL.createObjectURL(await res.blob());
-      reading.urls.add(url);
-      return url;
-    }).finally(() => reading.controllers.delete(ctrl));
-    p.catch(() => reading.cache.delete(key));
-    reading.cache.set(key, p);
-    return p;
+      return URL.createObjectURL(await res.blob());
+    });
+    entry.promise.then(() => { entry.done = true; },
+      () => { if (audioCache.get(text) === entry) audioCache.delete(text); });
+    audioCache.set(text, entry);
+    while (audioCache.size > CACHE_MAX) {
+      const [k, old] = audioCache.entries().next().value;
+      audioCache.delete(k);
+      old.ctrl.abort();
+      old.promise.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+    }
+    return entry.promise;
   }
 
-  function nextSpeakable(from) {
+  // Afbryd lyd, der stadig er ved at blive lavet (færdig lyd beholdes).
+  function abortPending() {
+    for (const [k, e] of audioCache) {
+      if (!e.done) { e.ctrl.abort(); audioCache.delete(k); }
+    }
+  }
+
+  function prefetch(pos, depth) {
+    const item = reading.items[pos];
+    if (!item || depth <= 0) return;
+    const gen = reading.gen;
+    fetchAudio(item.text).then(() => { if (gen === reading.gen) prefetch(pos + 1, depth - 1); }, () => {});
+  }
+
+  function buildItems(from) {
+    const items = [];
+    let first = true;
     for (let i = from; i < reading.sentences.length; i++) {
-      if (isSpeakable(reading.sentences[i])) return i;
+      const s = reading.sentences[i];
+      if (!isSpeakable(s)) continue;
+      for (const text of speechParts(s.speak, first)) items.push({ sentence: i, text });
+      first = false;
     }
-    return -1;
-  }
-
-  // Frigiv lyd for sætninger vi er færdige med.
-  function pruneCache(current) {
-    for (const [key, p] of reading.cache) {
-      const i = parseInt(key, 10);
-      if (i < current || i > current + 1) {
-        reading.cache.delete(key);
-        p.then((url) => { URL.revokeObjectURL(url); reading.urls.delete(url); }).catch(() => {});
-      }
-    }
+    return items;
   }
 
   function highlight(i) {
@@ -112,20 +139,27 @@
     if (el) el.scrollIntoView({ block: 'nearest' });
   }
 
-  async function playFrom(i) {
+  // Start oplæsning fra sætning i (første bid bliver kort).
+  function playSentence(i) {
+    reading.paused = false;
+    reading.items = buildItems(i);
+    playAt(0);
+  }
+
+  async function playAt(pos) {
     const gen = ++reading.gen;
     player.pause();
-    i = nextSpeakable(i);
-    if (i < 0) { finishReading(); return; }
-    reading.index = i;
-    highlight(i);
-    pruneCache(i);
+    const item = reading.items[pos];
+    if (!item) { finishReading(); return; }
+    reading.pos = pos;
+    reading.index = item.sentence;
+    highlight(item.sentence);
     updateButtons();
     if (!reading.paused) setStatus('Læser op …');
 
     let url;
     try {
-      url = await fetchAudio(i);
+      url = await fetchAudio(item.text);
     } catch (e) {
       if (gen !== reading.gen || e.name === 'AbortError') return;
       stopReading();
@@ -133,21 +167,17 @@
       return;
     }
     if (gen !== reading.gen) return;
-
-    // Hent næste sætning, mens denne afspilles.
-    const next = nextSpeakable(i + 1);
-    if (next >= 0) fetchAudio(next).catch(() => {});
+    prefetch(pos + 1, PREFETCH);
 
     player.src = url;
-    player.playbackRate = 1; // hastighed styres af Piper, ikke af afspilleren
+    applySpeed();
     if (!reading.paused) {
       try { await player.play(); } catch { /* afbrudt */ }
     }
   }
 
   player.addEventListener('ended', () => {
-    if (!reading.active) return;
-    playFrom(reading.index + 1);
+    if (reading.active) playAt(reading.pos + 1);
   });
 
   function startReading(fromIndex = 0) {
@@ -163,10 +193,9 @@
     reading.sentences = sentences;
     renderReader(text, sentences);
     reading.active = true;
-    reading.paused = false;
     textEl.hidden = true;
     readerEl.hidden = false;
-    playFrom(fromIndex);
+    playSentence(fromIndex);
   }
 
   function renderReader(text, sentences) {
@@ -187,14 +216,13 @@
   }
 
   function clearReading() {
+    const wasActive = reading.active;
     reading.gen++;
     player.pause();
     player.removeAttribute('src');
-    for (const c of reading.controllers) c.abort();
-    reading.controllers.clear();
-    for (const u of reading.urls) URL.revokeObjectURL(u);
-    reading.urls.clear();
-    reading.cache.clear();
+    // Under oplæsning afbrydes forudhentning; ellers kan der være en
+    // forberedelse af teksten i gang (se prewarm), som skal bruges nu.
+    if (wasActive) abortPending();
   }
 
   function stopReading() {
@@ -230,32 +258,38 @@
 
   // Gentag: under oplæsning gentages den aktuelle sætning; ellers hele teksten.
   function repeat() {
-    if (reading.active) {
-      reading.paused = false;
-      playFrom(reading.index);
-    } else {
-      startReading(0);
-    }
+    if (reading.active) playSentence(reading.index);
+    else startReading(0);
   }
 
   readerEl.addEventListener('click', (e) => {
     const span = e.target.closest('.sentence');
     if (!span || !reading.active) return;
-    reading.paused = false;
-    playFrom(parseInt(span.dataset.index, 10));
+    playSentence(parseInt(span.dataset.index, 10));
   });
 
   speedEl.addEventListener('input', () => {
     const v = speed();
     speedEl.setAttribute('aria-valuetext', v < 0.85 ? 'Langsom' : v > 1.15 ? 'Hurtig' : 'Normal');
     store('speed', String(v));
+    applySpeed(); // virker med det samme – også midt i en sætning
   });
-  speedEl.addEventListener('change', () => {
-    // Allerede hentet lyd har den gamle hastighed; næste sætning bruger den nye.
-    if (reading.active) {
-      const next = nextSpeakable(reading.index + 1);
-      if (next >= 0) fetchAudio(next).catch(() => {});
-    }
+
+  // Forbered første bid, mens eleven skriver eller indsætter tekst, så Læs
+  // starter med det samme. Kun én forberedelse ad gangen.
+  let prewarmTimer = 0;
+  let prewarmBusy = false;
+  function prewarm() {
+    if (!engines.tts || reading.active || prewarmBusy) return;
+    const s = splitSentences(textEl.value).find(isSpeakable);
+    const part = s && speechParts(s.speak, true)[0];
+    if (!part || audioCache.has(part)) return;
+    prewarmBusy = true;
+    fetchAudio(part).catch(() => {}).finally(() => { prewarmBusy = false; });
+  }
+  textEl.addEventListener('input', () => {
+    clearTimeout(prewarmTimer);
+    prewarmTimer = setTimeout(prewarm, 700);
   });
 
   // ---------- Diktering ----------
@@ -412,6 +446,7 @@
       setStatus('OpenLST kører ikke. Start OpenLST igen.', 'error');
     }
     updateButtons();
+    prewarm(); // fx tekst, som browseren har gendannet
     textEl.focus();
   }
 
